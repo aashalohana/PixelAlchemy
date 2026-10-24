@@ -1,340 +1,472 @@
+
 import base64
+import io
 import json
-import urllib.error
-import urllib.request
+import os
+import time
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 import gradio as gr
+import requests
 from dotenv import load_dotenv
-import os
+from PIL import Image, ImageOps
 
-BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
 
-ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID")
-API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN")
+APP_DIR = Path(__file__).resolve().parent
+OUTPUT_DIR = APP_DIR / "generated_images"
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
+API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
 MODEL = "@cf/black-forest-labs/flux-1-schnell"
 
+API_URL = (
+    "https://api.cloudflare.com/client/v4/accounts/"
+    f"{ACCOUNT_ID}/ai/run/{MODEL}"
+)
+
 STYLES = {
-    "Cinematic": "cinematic lighting, dramatic composition, film still",
-    "Photorealistic": "photorealistic, realistic textures, professional photography",
-    "Anime": "anime illustration, expressive details, beautiful colors",
-    "Digital Art": "high-quality digital art, detailed illustration",
-    "Fantasy": "fantasy concept art, magical atmosphere, intricate details",
-    "Minimalist": "minimalist composition, clean shapes, elegant simplicity",
+    "Cinematic": "cinematic composition, dramatic lighting, rich atmosphere, film still",
+    "Photorealistic": "photorealistic, natural textures, realistic lighting, fine details",
+    "Anime": "high-quality anime illustration, expressive details, beautiful color design",
+    "Digital Art": "professional digital artwork, polished rendering, intricate details",
+    "Fantasy": "fantasy concept art, atmospheric lighting, imaginative world, epic detail",
+    "Minimalist": "minimalist composition, refined shapes, restrained colors, clean design",
 }
 
-CUSTOM_CSS = """
-:root {
-    --bg: #090a14;
-    --panel: #101225;
-    --panel2: #15182d;
-    --border: #292d4c;
-    --text: #f5f3ff;
-    --muted: #a5a8c5;
-    --purple: #9b5cff;
+RATIOS = {
+    "Square · 1:1": (1, 1),
+    "Portrait · 2:3": (2, 3),
+    "Landscape · 3:2": (3, 2),
+    "Wide · 16:9": (16, 9),
+    "Story · 9:16": (9, 16),
 }
 
-.gradio-container {
-    max-width: 1500px !important;
-    margin: auto !important;
-    background: var(--bg) !important;
-    color: var(--text) !important;
-    font-family: Inter, Segoe UI, Arial, sans-serif !important;
-}
 
-body, .main, .wrap, .contain {
-    background: var(--bg) !important;
-    color: var(--text) !important;
-}
+def get_history():
+    files = sorted(
+        OUTPUT_DIR.glob("pixelalchemy_*.png"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return [str(path) for path in files[:12]]
 
-#topbar {
-    padding: 20px 8px 25px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 24px;
-}
 
-#brand {
-    font-size: 29px;
-    font-weight: 800;
-    letter-spacing: -1.1px;
-    color: #fff;
-}
+def crop_to_ratio(image, ratio):
+    """Center-crop the generated image to the selected aspect ratio."""
+    target_w, target_h = ratio
+    target_ratio = target_w / target_h
+    width, height = image.size
+    current_ratio = width / height
 
-#brand span { color: #b58aff; }
+    if abs(current_ratio - target_ratio) < 0.01:
+        return image
 
-#tagline {
-    color: var(--muted);
-    font-size: 13px;
-    margin-top: 4px;
-}
+    if current_ratio > target_ratio:
+        new_width = int(height * target_ratio)
+        left = (width - new_width) // 2
+        image = image.crop((left, 0, left + new_width, height))
+    else:
+        new_height = int(width / target_ratio)
+        top = (height - new_height) // 2
+        image = image.crop((0, top, width, top + new_height))
 
-.panel {
-    background: linear-gradient(145deg, #121529, #0d0f1e) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 18px !important;
-    padding: 22px !important;
-}
-
-h1, h2, h3, label, .prose {
-    color: var(--text) !important;
-}
-
-h2 { letter-spacing: -.5px; }
-
-p, .secondary {
-    color: var(--muted) !important;
-}
-
-textarea, input, select {
-    background: #0d1020 !important;
-    color: var(--text) !important;
-    border: 1px solid #303451 !important;
-    border-radius: 11px !important;
-}
-
-textarea:focus, input:focus {
-    border-color: var(--purple) !important;
-    box-shadow: 0 0 0 1px var(--purple) !important;
-}
-
-button {
-    border-radius: 11px !important;
-    transition: all .2s ease !important;
-}
-
-#generate-btn {
-    background: linear-gradient(100deg, #7440db, #a855f7) !important;
-    color: white !important;
-    border: 0 !important;
-    min-height: 52px !important;
-    font-weight: 700 !important;
-    box-shadow: 0 8px 24px #7c3aed35 !important;
-}
-
-#generate-btn:hover {
-    filter: brightness(1.12);
-}
-
-#preview-image {
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
-}
-
-#preview-box {
-    background: radial-gradient(ellipse at center, #21163e 0%, #101225 48%, #090a14 100%);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 12px;
-}
-
-#status-box {
-    background: #15172b;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
-}
-
-#details-box {
-    background: #101225;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 16px;
-}
-
-footer { color: var(--muted) !important; }
-
-@media (max-width: 768px) {
-    #brand { font-size: 24px; }
-    .panel { padding: 15px !important; }
-}
-"""
+    return image
 
 
 def generate_image(prompt, style, aspect_ratio):
     prompt = (prompt or "").strip()
 
     if not prompt:
-        return None, "Please enter an image description first.", "No image generated yet."
+        return None, "Enter a prompt to begin.", "Your prompt is empty.", get_history(), None
+
+    if len(prompt) > 1500:
+        return None, "Prompt is too long.", "Please keep your prompt under 1,500 characters.", get_history(), None
 
     if not ACCOUNT_ID or not API_TOKEN:
-        return (
-            None,
-            "Cloudflare credentials missing. Check your local .env file.",
-            "Generation unavailable."
-        )
+        return None, "Configuration needed.", "Check your local .env file. Do not share your API credentials.", get_history(), None
 
-    style_instruction = STYLES.get(style, STYLES["Cinematic"])
-    full_prompt = (
-        f"{prompt}. Art direction: {style_instruction}. "
-        "High-quality composition, carefully rendered details."
-    )
-
-    # Cloudflare FLUX Schnell currently accepts a prompt.
-    # Aspect ratio is shown in the interface; this endpoint's dimensions
-    # are not being changed unless supported by the model API.
-    url = (
-        "https://api.cloudflare.com/client/v4/accounts/"
-        f"{ACCOUNT_ID}/ai/run/{MODEL}"
-    )
+    style_description = STYLES.get(style, STYLES["Cinematic"])
+    full_prompt = f"{prompt}. Visual style: {style_description}."
 
     payload = {"prompt": full_prompt}
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {API_TOKEN}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    headers = {
+        "Authorization": f"Bearer {API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    started = time.time()
 
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            content_type = response.headers.get("Content-Type", "")
-            data = response.read()
+        response = requests.post(
+            API_URL,
+            headers=headers,
+            json=payload,
+            timeout=180,
+        )
+
+        if not response.ok:
+            try:
+                error_data = response.json()
+                error_message = json.dumps(error_data.get("errors", error_data))[:900]
+            except ValueError:
+                error_message = response.text[:900]
+
+            return (
+                None,
+                f"Generation failed · HTTP {response.status_code}",
+                f"Cloudflare response: {error_message}",
+                get_history(),
+                None,
+            )
+
+        content_type = response.headers.get("content-type", "").lower()
 
         if "image/" in content_type:
-            image_bytes = data
+            image_bytes = response.content
         else:
-            result = json.loads(data.decode("utf-8"))
+            try:
+                result = response.json()
+            except ValueError:
+                return None, "Unexpected response.", "The image service returned an unsupported response.", get_history(), None
+
             image_data = result.get("result", {}).get("image")
 
-            if not result.get("success") or not image_data:
-                errors = result.get("errors", [])
-                return None, f"Cloudflare returned no image. Details: {errors}", ""
-
-            if image_data.startswith("data:") and "," in image_data:
-                image_data = image_data.split(",", 1)[1]
+            if not image_data:
+                return (
+                    None,
+                    "No image returned.",
+                    json.dumps(result)[:1000],
+                    get_history(),
+                    None,
+                )
 
             image_bytes = base64.b64decode(image_data)
 
-        output_dir = BASE_DIR / "generated_images"
-        output_dir.mkdir(exist_ok=True)
-        output_path = output_dir / "pixelalchemy_latest.png"
-        output_path.write_bytes(image_bytes)
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+
+        ratio_label = aspect_ratio if aspect_ratio in RATIOS else "Square · 1:1"
+        image = crop_to_ratio(image, RATIOS[ratio_label])
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = uuid.uuid4().hex[:8]
+        output_path = OUTPUT_DIR / f"pixelalchemy_{timestamp}_{unique_id}.png"
+        image.save(output_path, format="PNG", optimize=True)
+
+        elapsed = time.time() - started
+        width, height = image.size
 
         details = (
-            f"**Prompt:** {prompt}\n\n"
-            f"**Style:** {style}\n\n"
-            f"**Selected aspect ratio:** {aspect_ratio}\n\n"
-            f"**Model:** FLUX.1 Schnell"
+            f"Style: {style}\n"
+            f"Aspect ratio: {ratio_label}\n"
+            f"Output size: {width} × {height} px\n"
+            f"Generation time: {elapsed:.1f} seconds\n"
+            f"Model: FLUX.1 schnell\n\n"
+            "Note: the selected ratio is applied by center-cropping "
+            "the generated image. The model itself generates the initial image."
         )
 
-        return str(output_path), "Image generated successfully.", details
+        return (
+            str(output_path),
+            "Image created successfully",
+            details,
+            get_history(),
+            str(output_path),
+        )
 
-    except urllib.error.HTTPError as error:
-        try:
-            message = error.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
-            message = "No additional details available."
+    except requests.Timeout:
+        return None, "Request timed out.", "The image service took too long. Please try again.", get_history(), None
+    except requests.RequestException as exc:
+        return None, "Connection error.", str(exc)[:700], get_history(), None
+    except Exception as exc:
+        return None, "Something went wrong.", f"{type(exc).__name__}: {str(exc)[:700]}", get_history(), None
 
-        return None, f"Cloudflare API error ({error.code}): {message}", ""
 
-    except Exception as error:
-        return None, f"Generation failed: {type(error).__name__}: {error}", ""
+CSS = """
+:root {
+    --studio-bg: #0b0c10;
+    --studio-panel: #111319;
+    --studio-panel-soft: #171922;
+    --studio-border: #292b36;
+    --studio-text: #f3f2f7;
+    --studio-muted: #9699a9;
+    --studio-accent: #a78bfa;
+}
+
+.gradio-container {
+    max-width: 1440px !important;
+    margin: 0 auto !important;
+    background:
+        radial-gradient(ellipse at 78% 0%, rgba(124, 92, 210, .11), transparent 36%),
+        var(--studio-bg) !important;
+    color: var(--studio-text) !important;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif !important;
+}
+
+body, .main, .wrap {
+    background: var(--studio-bg) !important;
+}
+
+#app-header {
+    padding: 22px 4px 25px;
+    border-bottom: 1px solid var(--studio-border);
+    margin-bottom: 24px;
+}
+
+#brand {
+    font-size: 26px;
+    line-height: 1.2;
+    font-weight: 750;
+    letter-spacing: -1px;
+    color: #faf9ff;
+}
+
+#brand span {
+    color: var(--studio-accent);
+}
+
+#tagline {
+    margin-top: 7px;
+    color: var(--studio-muted);
+    font-size: 13px;
+}
+
+#workspace-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #b8a6f7;
+    margin: 0 0 14px;
+}
+
+.studio-panel {
+    background: rgba(17, 19, 25, .94);
+    border: 1px solid var(--studio-border);
+    border-radius: 16px;
+    padding: 21px !important;
+}
+
+.studio-heading {
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: -.3px;
+    margin-bottom: 5px;
+    color: var(--studio-text);
+}
+
+.studio-subtitle {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--studio-muted);
+    margin-bottom: 20px;
+}
+
+label, .label-wrap span {
+    color: #dedde7 !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+}
+
+textarea, input, .wrap input, .wrap textarea {
+    background: #0d0f14 !important;
+    border: 1px solid #30323e !important;
+    border-radius: 10px !important;
+    color: #f6f4fb !important;
+}
+
+textarea:focus, input:focus {
+    border-color: #8870d2 !important;
+    box-shadow: 0 0 0 2px rgba(167, 139, 250, .10) !important;
+}
+
+button.primary {
+    background: linear-gradient(110deg, #8d75dc, #b09af4) !important;
+    color: #171321 !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    font-weight: 750 !important;
+    min-height: 46px !important;
+    transition: filter .2s ease, transform .2s ease;
+}
+
+button.primary:hover {
+    filter: brightness(1.08);
+}
+
+button.secondary, .secondary {
+    background: #1b1d26 !important;
+    border: 1px solid #333541 !important;
+    color: #e9e5f5 !important;
+    border-radius: 9px !important;
+}
+
+#preview-frame {
+    min-height: 460px;
+    background:
+        radial-gradient(ellipse at center, rgba(100, 83, 155, .10), transparent 60%),
+        #0c0e13;
+    border: 1px solid #292b36;
+    border-radius: 14px;
+    padding: 12px !important;
+}
+
+#preview-frame img {
+    object-fit: contain !important;
+    border-radius: 8px !important;
+}
+
+#status-panel {
+    border: 1px solid #292b36;
+    background: #111319;
+    border-radius: 10px;
+    padding: 12px 14px !important;
+    color: #c9c5d8;
+    font-size: 12px;
+}
+
+#details-panel textarea {
+    font-size: 12px !important;
+    line-height: 1.7 !important;
+    color: #b9b6c8 !important;
+}
+
+#history-title {
+    font-size: 17px;
+    font-weight: 650;
+    margin: 32px 0 12px;
+}
+
+footer {
+    display: none !important;
+}
+
+@media (max-width: 760px) {
+    #preview-frame { min-height: 280px; }
+    #app-header { padding: 15px 2px 20px; }
+    .studio-panel { padding: 15px !important; }
+}
+"""
 
 
 with gr.Blocks(
     theme=gr.themes.Base(
         primary_hue="violet",
-        secondary_hue="purple",
         neutral_hue="slate",
-        font=[gr.themes.GoogleFont("Inter"), "Arial", "sans-serif"],
+        font=["Inter", "Arial", "sans-serif"],
     ),
-    css=CUSTOM_CSS,
-    title="PixelAlchemy | AI Image Studio",
+    css=CSS,
+    title="PixelAlchemy — AI Image Studio",
 ) as demo:
 
     gr.HTML("""
-    <div id="topbar">
-      <div id="brand">✧ Pixel<span>Alchemy</span></div>
-      <div id="tagline">AI IMAGE STUDIO &nbsp;·&nbsp; Turn imagination into visual art</div>
+    <div id="app-header">
+        <div id="brand">Pixel<span>Alchemy</span></div>
+        <div id="tagline">AI IMAGE STUDIO &nbsp; / &nbsp; Turn ideas into visuals.</div>
     </div>
     """)
 
     with gr.Row(equal_height=False):
-        with gr.Column(scale=4, min_width=320):
-            with gr.Group(elem_classes=["panel"]):
-                gr.Markdown("## ✦ Create your artwork")
-                gr.Markdown("Describe your vision, choose a style, and bring it to life.")
+        with gr.Column(scale=4, min_width=300):
+            with gr.Group(elem_classes=["studio-panel"]):
+                gr.HTML('<div id="workspace-title">01 &nbsp; / &nbsp; CREATE</div>')
+                gr.HTML('<div class="studio-heading">Describe your vision</div>')
+                gr.HTML('<div class="studio-subtitle">Write a clear description of the image you want to create.</div>')
 
                 prompt = gr.Textbox(
-                    label="01  ·  Describe your imagination",
-                    placeholder="A magical city floating above the clouds at sunset...",
-                    lines=5,
-                    max_lines=8,
+                    label="IMAGE PROMPT",
+                    placeholder="A quiet Japanese tea house in a misty forest, soft morning light, cinematic composition...",
+                    lines=7,
+                    max_lines=12,
+                    max_length=1500,
                 )
 
                 style = gr.Dropdown(
                     choices=list(STYLES.keys()),
                     value="Cinematic",
-                    label="02  ·  Art style",
+                    label="VISUAL STYLE",
                 )
 
                 aspect_ratio = gr.Radio(
-                    choices=[
-                        "Square (1:1)",
-                        "Portrait (2:3)",
-                        "Landscape (3:2)",
-                    ],
-                    value="Square (1:1)",
-                    label="03  ·  Aspect ratio",
+                    choices=list(RATIOS.keys()),
+                    value="Square · 1:1",
+                    label="ASPECT RATIO",
                 )
 
-                create_btn = gr.Button(
-                    "✦  Generate Image",
+                generate_btn = gr.Button(
+                    "Generate image",
                     variant="primary",
-                    elem_id="generate-btn",
+                    size="lg",
                 )
 
-                gr.Markdown(
-                    "🔒 Your API credentials stay in your local `.env` file."
+                gr.HTML(
+                    '<div class="studio-subtitle" style="margin:12px 0 0">'
+                    'Powered by Cloudflare Workers AI. Availability and usage limits may apply.'
+                    '</div>'
                 )
 
-        with gr.Column(scale=6, min_width=360):
-            with gr.Group(elem_classes=["panel"]):
-                gr.Markdown("## Studio Preview")
-                status = gr.Markdown(
-                    "✨ **Your next masterpiece starts with an idea.**\n\n"
-                    "Enter a prompt and select your preferred style."
-                )
+        with gr.Column(scale=6, min_width=320):
+            with gr.Group(elem_classes=["studio-panel"]):
+                gr.HTML('<div id="workspace-title">02 &nbsp; / &nbsp; CANVAS</div>')
+                gr.HTML('<div class="studio-heading">Your creation</div>')
+                gr.HTML('<div class="studio-subtitle">Your generated image appears here, ready to preview and save.</div>')
 
-                result_image = gr.Image(
-                    label="Generated artwork",
+                preview = gr.Image(
+                    label="STUDIO PREVIEW",
                     type="filepath",
                     interactive=False,
-                    elem_id="preview-image",
+                    show_label=False,
+                    height=460,
+                    elem_id="preview-frame",
                 )
 
-                details = gr.Markdown(
-                    "*Your prompt details will appear here after generation.*"
+                status = gr.Textbox(
+                    value="Ready when you are. Describe an image to get started.",
+                    label="STATUS",
+                    interactive=False,
+                    lines=2,
+                    elem_id="status-panel",
                 )
 
-                download = gr.File(
-                    label="Download your artwork",
+                download_file = gr.File(
+                    label="DOWNLOAD YOUR IMAGE",
                     interactive=False,
                 )
 
-    def create_and_display(prompt_text, selected_style, selected_ratio):
-        image_path, message, image_details = generate_image(
-            prompt_text, selected_style, selected_ratio
-        )
-        download_path = image_path if image_path else None
-        return image_path, message, image_details, download_path
+                details = gr.Textbox(
+                    label="GENERATION DETAILS",
+                    interactive=False,
+                    lines=5,
+                    elem_id="details-panel",
+                )
 
-    create_btn.click(
-        fn=create_and_display,
-        inputs=[prompt, style, aspect_ratio],
-        outputs=[result_image, status, details, download],
+    gr.HTML('<div id="history-title">Recent creations</div>')
+    gr.HTML('<div class="studio-subtitle">Your latest 12 images saved on this machine.</div>')
+
+    history = gr.Gallery(
+        value=get_history,
+        label="IMAGE HISTORY",
+        columns=4,
+        height="auto",
+        object_fit="contain",
+        show_label=False,
+        allow_preview=True,
     )
 
-    gr.HTML("""
-    <div style="text-align:center;padding:22px;color:#9295b4;font-size:12px">
-      PixelAlchemy &nbsp;·&nbsp; AI Image Studio &nbsp;·&nbsp; Powered by Cloudflare AI
-    </div>
-    """)
+    generate_btn.click(
+        fn=generate_image,
+        inputs=[prompt, style, aspect_ratio],
+        outputs=[preview, status, details, history, download_file],
+    )
+
+    prompt.submit(
+        fn=generate_image,
+        inputs=[prompt, style, aspect_ratio],
+        outputs=[preview, status, details, history, download_file],
+    )
 
 
 if __name__ == "__main__":
