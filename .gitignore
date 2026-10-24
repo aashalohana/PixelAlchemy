@@ -7,3 +7,19 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+.env
+.env.*
+
+# Local backups and test files
+app_backup.py
+test_cloudflare.py
+test_generated.png
+
+# Generated AI images
+generated_images/
+
+# Local secrets
+.env
+.env.*
+!.env.example
