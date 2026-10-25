@@ -16,8 +16,14 @@ from PIL import Image, ImageOps
 APP_DIR = Path(__file__).resolve().parent
 load_dotenv(APP_DIR / ".env")
 
-OUTPUT_DIR = APP_DIR / "generated_images"
-OUTPUT_DIR.mkdir(exist_ok=True)
+
+if os.getenv("VERCEL"):
+    OUTPUT_DIR = Path("/tmp/generated_images")
+else:
+    OUTPUT_DIR = APP_DIR / "generated_images"
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
 API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "").strip()
