@@ -828,3 +828,211 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+/* Art style selection cards */
+.style-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.style-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #292b43;
+  border-radius: 12px;
+  background: #121322;
+  color: #e7e7f5;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+
+.style-option:hover {
+  border-color: #9b6bff;
+  transform: translateY(-2px);
+}
+
+.style-option.selected {
+  border: 2px solid #a66cff;
+  background: #211733;
+  padding: 7px;
+}
+
+.style-option img {
+  display: block;
+  width: 100%;
+  height: 76px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.style-option > span:not(.style-check) {
+  font-size: 12px;
+  text-align: center;
+}
+
+.style-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: #995cff;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+}
+/* Top navigation */
+.main-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+}
+
+.nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 4px;
+  color: #b8b8d2;
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: #c49aff;
+}
+
+.nav-link.active::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: #a66cff;
+  content: "";
+}
+
+.nav-link > span {
+  font-size: 18px;
+}
+
+@media (max-width: 650px) {
+  .main-navigation {
+    gap: 12px;
+  }
+
+  .nav-link {
+    gap: 5px;
+    font-size: 12px;
+  }
+}
+
+/* Prompt Details panel */
+.prompt-details {
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid #292b43;
+  border-radius: 18px;
+  background: #121322;
+  color: #e7e7f5;
+}
+
+.prompt-details-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.prompt-details-heading h2 {
+  margin: 6px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.details-badge {
+  padding: 7px 11px;
+  border: 1px solid #5a3a80;
+  border-radius: 20px;
+  background: #211733;
+  color: #c49aff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.details-prompt {
+  padding: 16px;
+  border: 1px solid #292b43;
+  border-radius: 12px;
+  background: #191a2c;
+  overflow-wrap: anywhere;
+}
+
+.details-label {
+  display: block;
+  margin-bottom: 9px;
+  color: #a8a8c5;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.details-prompt p {
+  margin: 0;
+  color: #ededfa;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.detail-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #292b43;
+  border-radius: 12px;
+  background: #191a2c;
+}
+
+.detail-card strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #e7e7f5;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .prompt-details {
+    padding: 16px;
+  }
+
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prompt-details-heading h2 {
+    font-size: 19px;
+  }
+}

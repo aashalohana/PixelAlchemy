@@ -3,12 +3,30 @@ import { useEffect, useState } from "react";
 import "./App.css";
 
 const styles = [
-  "Cinematic",
-  "Photorealistic",
-  "Anime",
-  "Digital Art",
-  "Fantasy",
-  "Minimalist",
+  {
+    name: "Cinematic",
+    image: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=240&h=160&fit=crop",
+  },
+  {
+    name: "Photorealistic",
+    image: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?w=240&h=160&fit=crop",
+  },
+  {
+    name: "Anime",
+    image: "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=240&h=160&fit=crop",
+  },
+  {
+    name: "Digital Art",
+    image: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=240&h=160&fit=crop",
+  },
+  {
+    name: "Fantasy",
+    image: "https://images.unsplash.com/photo-1511497584788-876760111969?w=240&h=160&fit=crop",
+  },
+  {
+    name: "Minimalist",
+    image: "https://images.unsplash.com/photo-1470252649378-9c29740c9fa8?w=240&h=160&fit=crop",
+  },
 ];
 
 const ratios = ["1:1", "2:3", "3:2", "16:9", "9:16"];
@@ -72,6 +90,7 @@ function App() {
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState("Your creative space is ready.");
   const [loading, setLoading] = useState(false);
+  const [imageDetails, setImageDetails] = useState(null);
 
   async function loadHistory() {
     try {
@@ -113,11 +132,21 @@ function App() {
       }
 
       const imageUrl = `${data.image}?t=${Date.now()}`;
-      setImage(imageUrl);
-      setHistory(data.history || []);
-      setStatus(
-        `Image created · ${data.width} × ${data.height} px · ${data.generationSeconds}s`
-      );
+     setImage(imageUrl);
+setHistory(data.history || []);
+
+setImageDetails({
+  prompt: prompt.trim(),
+  style: style,
+  ratio: ratio,
+  width: data.width,
+  height: data.height,
+  generationSeconds: data.generationSeconds,
+});
+
+setStatus(
+  `Image created · ${data.width} × ${data.height} px · ${data.generationSeconds}s`
+);
     } catch (error) {
       setStatus(error.message || "Could not generate the image. Please try again.");
     } finally {
@@ -151,10 +180,49 @@ function App() {
           </span>
         </a>
 
-        <div className="topbar-center">
-          <span className="status-dot" />
-          CREATIVE STUDIO
-        </div>
+<nav className="topbar-center main-navigation" aria-label="Main navigation">
+  <a
+    className="nav-link active"
+    href="#create"
+    onClick={(event) => {
+      event.preventDefault();
+      document.getElementById("create")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }}
+  >
+    <span>✧</span> Create
+  </a>
+
+  <a
+    className="nav-link"
+    href="#gallery"
+    onClick={(event) => {
+      event.preventDefault();
+      document.getElementById("gallery")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }}
+  >
+    <span>▣</span> Gallery
+  </a>
+
+  <a
+    className="nav-link"
+    href="#about"
+    onClick={(event) => {
+      event.preventDefault();
+      document.getElementById("about")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }}
+  >
+    <span>ⓘ</span> About
+  </a>
+</nav>
 
         <div className="topbar-right">
           <span className="model-label">IMAGE STUDIO</span>
@@ -163,7 +231,7 @@ function App() {
       </header>
 
       <main className="workspace">
-        <aside className="control-panel">
+        <aside id="create" className="control-panel">
           <div className="eyebrow">YOUR CREATIVE WORKSPACE</div>
           <h1>Imagine<br />something <span>beautiful.</span></h1>
           <p className="intro">
@@ -193,18 +261,30 @@ function App() {
             <span>{prompt.length}/1500</span>
           </div>
 
-          <div className="form-section">
-            <label className="field-label" htmlFor="style">VISUAL STYLE</label>
-            <select
-              id="style"
-              value={style}
-              onChange={(event) => setStyle(event.target.value)}
-            >
-              {styles.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </div>
+<div className="form-section">
+  <div className="field-label">CHOOSE AN ART STYLE</div>
+
+  <div className="style-grid">
+    {styles.map((item) => (
+      <button
+        key={item.name}
+        type="button"
+        className={`style-option ${
+          style === item.name ? "selected" : ""
+        }`}
+        onClick={() => setStyle(item.name)}
+        aria-pressed={style === item.name}
+      >
+        <img src={item.image} alt="" />
+        <span>{item.name}</span>
+        {style === item.name && (
+          <span className="style-check">✓</span>
+        )}
+      </button>
+    ))}
+  </div>
+</div>
+
 
           <div className="form-section">
             <div className="field-label">ASPECT RATIO</div>
@@ -286,15 +366,50 @@ function App() {
             )}
           </div>
 
-          <div className="status-bar">
-            <div className="status-left">
-              <span className={`status-indicator ${loading ? "busy" : ""}`} />
-              <span>{status}</span>
-            </div>
-            <span className="engine-label">PIXELALCHEMY STUDIO</span>
-          </div>
+         
+{image && imageDetails && (
+  <section className="prompt-details">
+    <div className="prompt-details-heading">
+      <div>
+        <div className="eyebrow">CREATION INFORMATION</div>
+        <h2>Prompt Details</h2>
+      </div>
+      <span className="details-badge">Generated</span>
+    </div>
 
-          <section className="history-section">
+    <div className="details-prompt">
+      <div className="details-label">YOUR PROMPT</div>
+      <p>{imageDetails.prompt}</p>
+    </div>
+
+    <div className="details-grid">
+      <div className="detail-card">
+        <span className="details-label">VISUAL STYLE</span>
+        <strong>{imageDetails.style}</strong>
+      </div>
+
+      <div className="detail-card">
+        <span className="details-label">ASPECT RATIO</span>
+        <strong>{imageDetails.ratio}</strong>
+      </div>
+
+      <div className="detail-card">
+        <span className="details-label">IMAGE DIMENSIONS</span>
+        <strong>
+          {imageDetails.width} × {imageDetails.height} px
+        </strong>
+      </div>
+
+      <div className="detail-card">
+        <span className="details-label">GENERATION TIME</span>
+        <strong>{imageDetails.generationSeconds}s</strong>
+      </div>
+    </div>
+  </section>
+)}
+
+
+          <section id="gallery" className="history-section">
             <div className="history-heading">
               <div>
                 <div className="eyebrow">YOUR COLLECTION</div>
@@ -326,7 +441,7 @@ function App() {
         </section>
       </main>
 
-      <footer className="app-footer">
+      <footer id="about" className="app-footer">
         <span>
           PIXELALCHEMY <span className="footer-dot">/</span> CREATIVE TOOLS
         </span>
